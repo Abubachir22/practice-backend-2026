@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: survey_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+  app:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: survey_db
+      DB_USER: root
+      DB_PASSWORD: root
+      JWT_SECRET: your-secret-key-change-in-production
+      JWT_EXPIRES_IN: 7d
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    working_dir: /app/src
+    command: sh -c "npm run migrate && npm run seed && npm start"
+
+volumes:
+  db_data: {}
+

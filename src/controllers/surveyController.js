@@ -27,18 +27,49 @@ const createSurvey = async (req, res) => {
 
 const getSurveys = async (req, res) => {
   try {
-    const { status, mySurveys } = req.query;
+    const {
+      status,
+      mySurveys,
+      filter,
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
     const where = {};
 
+    // Фильтр "мои опросы"
     if (mySurveys === 'true') {
       where.authorId = req.user.id;
     }
 
+    // Фильтр по статусу
     if (status) {
       where.status = status;
     }
 
-    const surveys = await Survey.findAll({
+    // Высокоуровневые фильтры: active/completed
+    if (filter === 'active') {
+      where.status = 'published';
+    } else if (filter === 'completed') {
+      where.status = 'closed';
+    }
+
+    // Пагинация
+    const pageNumber = Number(page) > 0 ? Number(page) : 1;
+    const pageSize = Number(limit) > 0 && Number(limit) <= 100 ? Number(limit) : 10;
+    const offset = (pageNumber - 1) * pageSize;
+
+    // Сортировка
+    let order = [['createdAt', sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC']];
+
+    // Поддержка сортировки по количеству ответов
+    if (sortBy === 'responsesCount') {
+      order = [[Response, 'id', sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC']];
+    }
+
+    const { rows, count } = await Survey.findAndCountAll({
       where,
       include: [
         {
@@ -55,13 +86,39 @@ const getSurveys = async (req, res) => {
               as: 'options'
             }
           ]
+        },
+        {
+          model: Response,
+          as: 'responses',
+          attributes: ['id']
         }
       ],
-      order: [['createdAt', 'DESC']]
+      distinct: true,
+      order,
+      limit: pageSize,
+      offset
     });
 
+    const surveys = rows.map((survey) => ({
+      ...survey.toJSON(),
+      responsesCount: survey.responses ? survey.responses.length : 0
+    }));
+
     res.json({
-      surveys
+      meta: {
+        page: pageNumber,
+        limit: pageSize,
+        total: count,
+        totalPages: Math.ceil(count / pageSize)
+      },
+      filters: {
+        status: where.status || null,
+        mySurveys: mySurveys === 'true',
+        filter: filter || null,
+        sortBy,
+        sortOrder: sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc'
+      },
+      data: surveys
     });
   } catch (error) {
     console.error('Get surveys error:', error);
